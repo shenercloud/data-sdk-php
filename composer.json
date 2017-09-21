@@ -1,0 +1,34 @@
+{
+	"name" : "shenercloud/data-sdk-php",
+	"description" : "shenercloud data system sdk php",
+	"type" : "data-sdk",
+	"homepage" : "https://github.com/shenercloud/data-sdk-php.git",
+	"license" : "Apache License 2.0",
+	"support" : {
+		"email" : "shenercloud@163.com",
+		"source" : "https://github.com/shenercloud/data-sdk-php.git"
+	},
+	"keywords" : [
+		"laravel shenercloud data-sdk-php"
+	],
+	"require" : {
+		"php" : ">=5.3",
+		"laravel/laravel": "^5.5"
+	},
+	"autoload" : {
+		"psr-4" : {
+			"ShenerCloud\\" : "data-sdk-php"
+		}
+	},
+	"authors" : [{
+			"name" : "Particker",
+			"email" : "shenercloud@163.com",
+			"homepage" : "https://github.com/shenercloud",
+			"role" : "teamer"
+		}
+	],
+	"require-dev": {
+		"phpunit/dbunit": "^3.0",
+		"phpunit/phpunit": "6.2"
+	}
+}
