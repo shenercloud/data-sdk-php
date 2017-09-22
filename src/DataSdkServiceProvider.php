@@ -2,7 +2,7 @@
 namespace ShenerCloud;
 
 use Illuminate\Support\ServiceProvider;
-use ShenerCloud\DataSdk;
+use ShenerCloud\DataSdkClient;
 
 class DataSdkServiceProvider extends ServiceProvider
 {
@@ -20,7 +20,7 @@ class DataSdkServiceProvider extends ServiceProvider
     public function boot()
     {
         $this->publishes([
-            __DIR__.'/../../Config/config.php' => config_path('datasdk.php')
+            __DIR__.'/../../Config/config.php' => config_path('datasdkclient.php')
         ]);
     }
     /**
@@ -34,10 +34,10 @@ class DataSdkServiceProvider extends ServiceProvider
         $appsecret = config('datasdk.appsecret');
         $path = config('datasdk.path');
         $hostname = config('datasdk.hostname');
-        $datasdk =  new DataSdk($dir, $domain,$lang,$charset);
+        $datasdkclient =  new DataSdkClient($dir, $domain,$lang,$charset);
         
-        $this->app->singleton('datasdk', function($app) use ($datasdk) {
-            return $datasdk;
+        $this->app->singleton('datasdkclient', function($app) use ($datasdkclient) {
+            return $datasdkclient;
         });
     }
 }
