@@ -292,7 +292,7 @@ class DataSdkClient
     }
     
     /**
-     //* 设置http库的请求超时时间，单位秒
+     * 设置http库的请求超时时间，单位秒
      *
      * @param int $timeout
      */
