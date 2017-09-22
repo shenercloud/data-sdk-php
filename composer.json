@@ -17,7 +17,7 @@
 	},
 	"autoload" : {
 		"psr-4" : {
-			"ShenerCloud\\" : "data-sdk-php"
+			"ShenerCloud\\" : "data-sdk-php/src/"
 		}
 	},
 	"authors" : [{
