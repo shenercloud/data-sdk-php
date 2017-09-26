@@ -13,6 +13,8 @@ class DataSdkClient
     private $time;
     private $useSSL=true;
     private $Hostname = '';
+    private $Openid='';
+    private $Oappsecret='';
     
     private $timeout=120;
     private $connectTimeout=120;
@@ -25,14 +27,14 @@ class DataSdkClient
         $Appsecret = trim($appsecret);
         $Path = trim($path);
         $Hostname = trim($hostname);
-        
+
         if (empty($Appid)) {
             throw new DataException("access key id is empty");
         }
         if (empty($Appsecret)) {
             throw new DataException("access key secret is empty");
         }
-        if (empty($Token_patth))
+        if (empty($Path))
         {
             throw new DataException("Token save path are't set");
         }
@@ -44,7 +46,25 @@ class DataSdkClient
         $this->Hostname = $Hostname;
         self::checkEnv();
     }
-    
+
+    /**
+     * 设置用户
+     * @param $openid
+     * @param $appsecret
+     * @return bool
+     * @throws DataException
+     */
+    public function setUserOpenidAndAppsecret($openid,$appsecret)
+    {
+        $openid = stripslashes($openid);
+        $appsecret = stripslashes($appsecret);
+        if (empty($openid) || empty($appsecret))
+            throw new DataException("openid and appsecret is empty");
+        $this->Openid = $openid;
+        $this->Oappsecret = $appsecret;
+        return true;
+    }
+
     /**
      * 平台用户注册
      * @param $account
@@ -54,15 +74,87 @@ class DataSdkClient
     {
         $account = trim($account);
         if (empty($account))
-            throw DataException("account is empty");
+            throw new DataException("account is empty");
             $params['request_url'] = $this->Hostname.'/oauth/user/register';
+            $this->time = time();
             $params['argement'] = [
                 'Account'=>$account,
                 'Appid'=>$this->Appid,
                 'Sign'=>md5($this->Appid.$this->Appsecret.$this->time),
                 'Time'=>date('Y-m-d H:i:s',$this->time)
             ];
-            return $this->auth($params);
+            $res = $this->auth($params);
+
+        if (isset($res->Code) && $res->Code == 100){
+            $this->setUserOpenidAndAppsecret($res->User->Openid,$res->User->Appsecret);
+        }
+        return $res;
+    }
+
+    /**
+     * 本地获取TOken
+     * @param $openid
+     * @return bool
+     * @throws DataException
+     */
+    private function getAccessToken()
+    {
+        if (empty($this->Openid))
+            return false;
+        $file = $this->Path.md5($this->Openid.date('Ymd',time()));
+        if (file_exists($file)){
+            $data = file_get_contents($file);
+            $data = json_decode($data);
+            if ($data->expire_in - time() < 30 && $data->expire_in - time() > 0) {
+                $res = $this->userTokenRefresh($this->Openid,$data->refresh_token);
+                return $this->getAccessToken();
+            }else if ($data->expire_in - time() < 0){
+                $res = $this->getUserToken();
+                if (isset($res->Code) && $res->Code == 100) {
+                    return $this->getAccessToken();
+                }else {
+                    throw new DataException("token expire");
+                    return false;
+                }
+            }
+            return $data->token;
+        }else{
+            $res = $this->userLoginAndGetToken();
+            if (isset($res->Code) && $res->Code == 100)
+                return $this->getAccessToken();
+        }
+        throw new DataException("token are't existed");
+        return false;
+    }
+
+    /**
+     * 设置本地Token
+     * @param $openid
+     * @param $token
+     * @param $refresh_token
+     * @param $expire
+     * @return bool
+     */
+    private function setAccessToken($openid,$token,$refresh_token,$expire)
+    {
+        $path = $this->Path;
+        $openid = stripslashes($openid);
+        $token = stripslashes($token);
+        $refresh_token = stripslashes($refresh_token);
+        $expire = intval($expire);
+        $arr = [
+            'token'=>$token,
+            'refresh_token'=>$refresh_token,
+            'expire_in'=>$expire
+        ];
+        if (empty($openid) || empty($token) || empty($refresh_token) || empty($expire))
+            return false;
+
+        $file = $this->Path.md5($openid.date('Ymd',time()));
+        $f = fopen($file, 'w');
+        fwrite($f, json_encode($arr));
+        fclose($f);
+        return true;
     }
     
     /**
@@ -71,19 +163,24 @@ class DataSdkClient
      * @return ResponseCore
      * @throws DataException
      */
-    public function userLoginAndGetToken($openid)
+    public function userLoginAndGetToken()
     {
-        $openid = trim($openid);
-        if (empty($openid))
+        if (empty($this->Openid) || empty($this->Oappsecret))
             throw new DataException("openid is empty");
-            
-            $params['request_url'] = $this->Hostname.'/oauth/user/login';
-            $params['argement'] = [
-                'Openid'=>$openid,
-                'Sign'=>md5($openid.$this->Appsecret.$this->time),
-                'Time'=>date('Y-m-d H:i:s',$this->time)
-            ];
-            return $this->auth($params);
+
+        $this->time = time();
+        $params['request_url'] = $this->Hostname.'/oauth/user/login';
+        $params['argement'] = [
+            'Openid'=>$this->Openid,
+            'Sign'=>md5($this->Openid.$this->Oappsecret.$this->time),
+            'Time'=>date('Y-m-d H:i:s',$this->time)
+        ];
+        $res = $this->auth($params);
+        if (isset($res->Code) && $res->Code == 100){
+            if(!$this->setAccessToken($this->Openid,$res->Token->Token,$res->Token->Refresh_token,$res->Token->Expire_in))
+                throw new DataException("write token file failed;");
+        }
+        return $res;
     }
     
     /**
@@ -92,19 +189,23 @@ class DataSdkClient
      * @return ResponseCore
      * @throws DataException
      */
-    public function getUserToken($openid)
+    public function getUserToken()
     {
-        $openid = trim($openid);
-        if (empty($openid))
+        if (empty($this->Openid))
             throw new DataException("openid is empty");
-            
-            $params['request_url'] = $this->Hostname.'/oauth/user/token';
-            $params['argement'] = [
-                'Openid'=>$openid,
-                'Sign'=>md5($openid.$this->Appsecret.$this->time),
-                'Time'=>date('Y-m-d H:i:s',$this->time)
-            ];
-            return $this->auth($params);
+
+        $params['request_url'] = $this->Hostname.'/oauth/user/token';
+        $this->time = time();
+        $params['argement'] = [
+            'Openid'=>$this->Openid,
+            'Sign'=>md5($this->Openid.$this->Oappsecret.$this->time),
+            'Time'=>date('Y-m-d H:i:s',$this->time)
+        ];
+        $res = $this->auth($params);
+        if (isset($res->Code) && $res->Code == 100){
+            $this->setAccessToken($this->Openid,$res->Token->Token,$res->Token->Refresh_token,$res->Token->Expire_in);
+        }
+        return $res;
     }
     
     /**
@@ -115,7 +216,7 @@ class DataSdkClient
      * @return ResponseCore
      * @throws DataException
      */
-    public function userTokenRefresh($openid,$token,$refresh_token)
+    private function userTokenRefresh($openid,$token,$refresh_token)
     {
         $openid = trim($openid);
         $token = trim($token);
@@ -123,13 +224,17 @@ class DataSdkClient
         if (empty($openid) || empty($token) || empty($refresh_token))
             throw new DataException("openid or token or refresh_token is empty");
             
-            $params['request_url'] = $this->Hostname.'/oauth/user/refresh';
-            $params['argement'] = [
-                'Refresh_token'=>$refresh_token,
-                'Sign'=>md5($openid.$token.$this->time),
-                'Time'=>date('Y-m-d H:i:s',$this->time)
-            ];
-            return $this->auth($params);
+        $params['request_url'] = $this->Hostname.'/oauth/user/refresh';
+        $params['argement'] = [
+            'Refresh_token'=>$refresh_token,
+            'Sign'=>md5($openid.$token.$this->time),
+            'Time'=>date('Y-m-d H:i:s',$this->time)
+        ];
+        $res = $this->auth($params);
+        if (isset($res->Code) && $res->Code == 100){
+            $this->setAccessToken($this->Openid,$res->Token,$res->Refresh_token,$res->Expire_in);
+        }
+        return $res;
     }
     
     /**
@@ -140,22 +245,19 @@ class DataSdkClient
      * @return ResponseCore
      * @throws DataException
      */
-    public function getSourceItems($media_id,$page,$offset)
+    public function getSourceItems($media_id='',$page=1,$offset=20)
     {
         $media_id = trim($media_id);
         $page = intval($page);
         $offset = intval($offset);
-        if (empty($media_id))
-            throw new DataException("media id is empty");
-            
-            $params['request_url'] = $this->Hostname.'/oauth/source/get';
-            $params['argement'] = [
-                'Media'=>$media_id,
-                'Token'=>$token,
-                'Page'=>$page,
-                'Offset'=>$offset
-            ];
-            return $this->auth($params);
+        $params['request_url'] = $this->Hostname.'/oauth/source/get';
+        $params['argement'] = [
+            'Media'=>$media_id,
+            'Token'=>$this->getAccessToken(),
+            'Page'=>$page,
+            'Offset'=>$offset
+        ];
+        return $this->auth($params);
     }
     
     /**
@@ -173,7 +275,7 @@ class DataSdkClient
             $params['request_url'] = $this->Hostname.'/oauth/source/info';
             $params['argement'] = [
                 'Media'=>$media_id,
-                'Token'=>$token
+                'Token'=>$this->getAccessToken()
             ];
             return $this->auth($params);
     }
@@ -193,7 +295,7 @@ class DataSdkClient
             $params['request_url'] = $this->Hostname.'/oauth/source/addr';
             $params['argement'] = [
                 'Media'=>$media_id,
-                'Token'=>$token
+                'Token'=>$this->getAccessToken()
             ];
             return $this->auth($params);
     }
@@ -208,8 +310,8 @@ class DataSdkClient
     private function auth($params)
     {
         $request_url = isset($params['request_url'])?trim($params['request_url']):'';
-        $params = isset($params['argement'])?$params['argement']:array();
-        
+        $argement = isset($params['argement'])?$params['argement']:array();
+
         if (empty($request_url)){
             throw new DataException("request url is empty");
         }
@@ -222,7 +324,11 @@ class DataSdkClient
         if ($this->connectTimeout !== 0) {
             $request->connect_timeout = $this->connectTimeout;
         }
-        
+        $request->ssl_verification = false;
+        $request->debug_mode = true;
+        $request->set_method('post');
+        $request->set_body($argement);
+
         try {
             $request->send_request();
         } catch (RequestCore_Exception $e) {
@@ -230,19 +336,15 @@ class DataSdkClient
         }
         $response_header = $request->get_response_header();
         $data = new ResponseCore($response_header, $request->get_response_body(), $request->get_response_code());
+
         //如果返回错误那就休眠重新请求几次
         if ((integer)$request->get_response_code() === 500) {
-            if ($this->redirects <= $this->maxRetries) {
-                //设置休眠
-                $delay = (integer)(pow(4, $this->redirects) * 100000);
-                usleep($delay);
-                $this->redirects++;
-                $data = $this->auth($request_url);
-            }
+            echo $data->body;
+            return false;
         }
-        
+
         $this->redirects = 0;
-        return $data;
+        return json_decode($data->body);
     }
     
     /**
